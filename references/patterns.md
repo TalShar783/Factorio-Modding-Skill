@@ -114,7 +114,7 @@ Ready-made architectures verified in production mod code. Prefer repeating one o
 
 **When:** any script behavior scales with research (limits, rates, ranges).
 
-**Recipe:** derive the value from `force.technologies["tech-name"]` at point of use — for upgrade techs the completed count is `tech.researched and tech.level or (tech.level - 1)`. Do **not** accumulate a counter in `on_research_finished`. (Caveat: the `(tech.level - 1)` branch for *partially-researched* upgrade techs is API-doc-derived and not yet confirmed in-game — the verification below covers the live-read-vs-counter behavior, not this formula.)
+**Recipe:** derive the value from `force.technologies["tech-name"]` at point of use — for upgrade techs the completed count is `tech.researched and tech.level or (tech.level - 1)`. Do **not** accumulate a counter in `on_research_finished`. (The `(tech.level - 1)` branch for *partially-researched* upgrade techs is confirmed in-game: editor de-research/re-research visibly stepped the derived rate per level, 2026-07-13.)
 
 **Why (verified in-game):** event counters miss every research change that doesn't fire the event normally — scenario scripts researching everything at init, editor un-research/re-research, `research_all_technologies()`. A counter-based rate sat at base level in an all-researched scenario and ignored editor changes entirely; live reads track all of them, including un-research.
 
