@@ -66,6 +66,36 @@ Ready-made architectures verified in production mod code. Prefer repeating one o
 
 ---
 
+## Hidden combinators for native-speed counting/thresholding (offload from `on_tick`)
+
+**When:** you would otherwise poll an entity every tick (or every nth tick) in Lua to count events, hold a running total, or fire when a value crosses a threshold — and the quantity you need is exposed as a circuit signal or derivable by combinator arithmetic. This generalizes the gating pattern above from "one condition" to "stateful computation."
+
+**Recipe:**
+- Build the logic from script-created `constant-`/`arithmetic-`/`decider-combinator` entities as hidden helpers of a compound entity (prefixed names, `raise_built = false`), exactly like any other hidden part.
+- **Wire them with the 2.0 API** (this is a 1.x→2.0 breaking change — `connect_neighbour` no longer exists): `a.get_wire_connector(defines.wire_connector_id.circuit_red, true):connect_to(b.get_wire_connector(defines.wire_connector_id.circuit_red, true))`. Pass `true` to create the connector if absent.
+- **Memory cell / latch** for zero-storage state: a decider wired output→input holds its value indefinitely (red loop = held value; a green counter signal decides when to update). Pair with a self-clock (decider wired to itself + a constant combinator) and a pulse (`=` decider on the clock) to get counters, thresholds, and periodic triggers entirely in-network.
+- **Read a network value back into Lua** only when you actually need it: `entity.get_circuit_network(defines.wire_connector_id.circuit_red).get_signal(...)`.
+- **Tear down every combinator when the parent dies** — compound-entity teardown discipline (see the compound-entity pattern); orphaned combinators keep computing.
+
+**Why:** circuit logic runs in the engine's native C++ solver, not interpreted Lua, and costs **zero Lua↔C++ boundary crossings** — the crossing is the expensive part (reads off an entity measured ~4× a Lua table read; multiply by machine count × ticks for an `on_tick` poll). Combinator state is also **deterministic and multiplayer-safe by construction**: no `storage` table, no `on_load` re-registration, no desync risk, no migration.
+
+**Costs (when NOT to):** combinators are real entities occupying tile positions — a genuine footprint cost, not free, and on space platforms footprint is often the thing you're trying to minimize. Each combinator adds **1 tick of step-delay** (a chain's latency is the tell — Filter Combinator's advertised 3-tick delay is three combinator steps), so this is unusable for same-tick response. And combinators can only do signal arithmetic: they **cannot touch inventories, mutate item durability, move items, or call any API**. Anything that mutates game state still needs Lua.
+
+**The hybrid (the high-value case):** let combinators do the cheap high-frequency part and Lua do only the rare mutation. Example — per-craft durability drain with no per-tick Lua: enable the machine's native recipe-finished pulse (see next pattern), feed it into a combinator memory cell that counts crafts and emits a signal at threshold; Lua reacts only when that signal fires and does the one thing combinators can't — decrement the tool item's `LuaItemStack.durability`. Per-tick Lua work collapses to near-zero.
+
+---
+
+## Detecting machine craft completion (no event exists)
+
+**When:** script must react to an assembling-machine/furnace finishing a craft. **There is no machine-crafting event** — `on_player_crafted_item` covers only character crafting; nothing fires for machines. Two verified pull-based levers:
+
+- **`LuaEntity.products_finished`** (read-only `uint32`): lifetime count of products the machine has finished. Diff it against a stored previous value on a **budgeted** poll (`on_nth_tick`, not `on_tick`) to detect completions cheaply. Simplest for a small, bounded set of purpose-built machines.
+- **Native "recipe finished" circuit pulse**: set `control_behavior.circuit_read_recipe_finished = true` and `circuit_recipe_finished_signal = {...}` on the machine's `LuaAssemblingMachineControlBehavior`. Emits a one-tick pulse per completed craft — feed it straight into the combinator pattern above for zero-Lua counting.
+
+**Why:** avoids the outdated/expensive approaches (polling `crafting_progress` fractions or scanning output inventory every tick). Prefer the circuit pulse when the reaction can stay in-network; use `products_finished` when Lua must act and the machine count is small.
+
+---
+
 ## GUI standards checklist
 
 **When:** any custom panel. Work through this list in order — every deviation from vanilla GUI conventions reads as jank to players.
