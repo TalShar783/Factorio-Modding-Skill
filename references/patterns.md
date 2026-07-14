@@ -22,6 +22,7 @@ Ready-made architectures verified in production mod code. Prefer repeating one o
   ```
 - Control script: create helpers in `on_built_entity` (and robot/platform variants), store the member handles in `storage` keyed by the shell's `unit_number`, destroy them all when the shell is removed — via the removal-event family plus the `on_object_destroyed` backstop (§ Guaranteed entity cleanup).
 - Set `shell.fast_replaceable_group = nil` if the shell was deepcopied from a vanilla entity, or players can fast-replace it with the vanilla original.
+- **Only the shell is blueprintable; helpers are respawned, never captured.** The `not-blueprintable` flag on helpers is load-bearing: without it a blueprint captures the helpers, so on paste the shell's build event spawns a fresh set *and* the blueprint places the captured ones — duplicated, orphaned helpers. The shell's build event (including robot/ghost revive) is the single source of helpers; the blueprint and its ghost carry the shell alone. (This is what the flag does — there is no `placed_by` field; `placeable_by` is unrelated, it only picks the smart-pipette item.)
 
 **Why:** every attempt to force one prototype to host all behaviors hits engine walls (see graveyard: single-crafter fluid PMR, cosmetic-shell attempt). Composition keeps every behavior on an entity type the engine natively supports it on.
 
