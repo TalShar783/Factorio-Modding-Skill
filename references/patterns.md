@@ -194,3 +194,20 @@ Ready-made architectures verified in production mod code. Prefer repeating one o
 - Slice selection must derive only from game state (`game.tick`, `storage` contents) — never wall-clock or per-client data (desync; see lifecycle-and-determinism.md).
 
 **Why:** steady small cost per tick beats a lag spike every N seconds; the modulo-slice pattern is the forum-standard answer for thousands-strong entity lists. Before reaching for this at all, check whether a circuit condition or native prototype behavior removes the need to poll (core paradigm 3).
+
+---
+
+## Circuit-condition → Lua event bridge (land mine)
+
+**When:** you need a circuit condition (or any in-world moment with no native event) to *push* into Lua without per-tick polling. Companion to § Detecting machine craft completion — that covers the recipe-finished pulse; this is the general circuit-condition case.
+
+**Recipe:**
+- Build a purpose-built `land-mine` (deepcopy vanilla, rename). A land mine is the one entity whose circuit "Enable" condition **detonates** it, and detonation runs its `action` trigger.
+- Set `action` to a single `{type = "script", effect_id = "<unique>"}` — strip all damage/explosion effects. Detonation then does nothing but raise `on_script_trigger_effect`.
+- Handler: `script.on_event(defines.events.on_script_trigger_effect, fn)`, branch on `event.effect_id`. Optionally re-raise a `custom-event` so other mods can subscribe.
+- `force_die_on_attack = false` → the mine **survives detonation and auto re-arms**, so no per-event script respawn is needed.
+- Make it inert to *physical* triggering: empty `trigger_collision_mask`, tighten `trigger_force`, minimal `trigger_radius`; blank `picture_safe`/`picture_set`/`picture_set_enemy` to hide it. Script-place it (`raise_built = false`, `not-blueprintable`, respawn on the owner's build event) and lifecycle-clean it (full built/removed matrix + `on_entity_cloned`).
+
+**Critical (verified in-game 2.1.10):** circuit detonation is evaluated **every tick** and is **level-triggered** — while the condition holds true the mine re-fires once per tick, and no data field throttles it (see constraints.md § Triggers, graveyard.md). The design is only cheap for **rare** events, so the *consumer* must **pulse the input signal** (true for one tick per real crossing) via upstream circuit edge-conditioning. A sustained-true condition is the worst case (one boundary crossing per tick).
+
+**Why:** the only native circuit-condition→trigger path in the engine. Wins over polling only when events are genuinely rare (rarer than ~1 per 5–10 s) and the signal is pulsed; otherwise stay in-circuit or poll on a budget.

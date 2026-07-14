@@ -28,6 +28,18 @@ Architecture-level dead ends, each verified by hitting the wall in practice. Do 
 
 ---
 
+## Data-stage cooldown on a circuit-detonated land mine
+
+**The idea:** a land mine used as a circuit-condition→`on_script_trigger_effect` bridge (patterns.md) re-fires every tick while the condition holds; throttle it in the data stage — via `trigger_interval`, `timeout`, or by wrapping its `action` effect in `TriggerEffectWithCooldown`.
+
+**Why it's dead (each verified 2.1.10):**
+1. `trigger_interval` governs only the *enemy-proximity* detonation scan; `timeout` governs only *initial post-placement* arming. Neither affects circuit re-detonation — both tested at 600 ticks, still one detonation per tick.
+2. `TriggerEffectWithCooldown` is not in the `TriggerEffect` union; it's accepted only in `SegmentPrototype.update_effects[/_while_enraged]` and `StickerPrototype.update_effects[]`, so it can't sit in the mine's `action` (constraints.md § Triggers).
+
+**Use instead:** pulse the input signal upstream (circuit edge-conditioning so the condition is true for exactly one tick per real event). A Lua-side debounce works but still pays the Lua↔engine boundary crossing every tick, defeating the point of a push bridge.
+
+---
+
 ## Treating fluid `add_fluid`/`remove_fluid`/`set_fluid` as `(fluid, index)`
 
 **The idea:** pass the fluid table first because it's the "important" argument.
